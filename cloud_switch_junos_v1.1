@@ -1,0 +1,153 @@
+#Develop by Chathuranga D - 2019
+#AWS Cloud Network Fabric Project
+
+import paramiko
+import re
+from datetime import datetime
+import time
+import sys
+import os
+import code
+import logging
+
+
+# Generate a Log file with corresponded time
+dt = datetime.now().strftime("%Y%m%d-%H%M%S")
+hostname = raw_input("Please Enter Switch Name/IP: ")
+f1 = '/root/Desh/python_scripts/logs/%s_%s.csv' % (hostname,dt)
+log = open(('%s' % f1),'w')
+
+
+# Write the data of stdout to both console and log file
+class Logsession:
+   def __init__(self, stream):
+       self.stream = stream
+
+   def write(self, data):
+       self.stream.write(data)
+       self.stream.flush()
+       log.write(data)
+
+sys.stdout=Logsession(sys.stdout)
+
+# Session Log with INFO level
+targets = logging.StreamHandler(sys.stdout), logging.FileHandler('t.txt')
+logging.basicConfig(format='%(message)s', level=logging.INFO, handlers=targets)
+def Logger(lfile):
+    # screen and file logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+
+    # Screen logger
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s',\
+            "%Y-%m-%d %H:%M:%S")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+    # Info only file
+    handler = logging.FileHandler(lfile, "w", encoding=None, delay="true")
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s',\
+            "%Y-%m-%d %H:%M:%S")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+
+
+
+print
+port=22
+username = raw_input("Please Enter AD-username: ")
+password = raw_input("Please Enter Password: ")
+vlanid = raw_input("Please Enter Vlan id: ")
+lip = raw_input("Please Enter Local IP: ")
+riip = raw_input("Please Enter remote interface ip: ")
+
+
+init_command_list = [
+    "set cli screen-length 0 \n",
+    "configure \n",
+    # Interface Configuration
+    "set interfaces ge-0/0/1 unit %s description AWS-TEST-TRANSIT-GW \n" % vlanid ,
+    "set interfaces ge-0/0/1 unit %s vlan-id %s \n" % (vlanid,vlanid),
+    "set interfaces ge-0/0/1 unit %s family inet mtu 1500 \n" % vlanid ,
+    "set interfaces ge-0/0/1 unit %s family inet address %s \n" % (vlanid,lip),
+
+    # BGP Configuration
+    "set protocols bgp group EBGP_TEST-TGW type external \n",
+    "set protocols bgp group EBGP_TEST-TGW peer-as 64512 \n",
+    "set protocols bgp group EBGP_TEST-TGW neighbor <remote-ip> local-address <local-ip> \n",
+    "set protocols bgp group EBGP_TEST-TGW neighbor <remote-ip>  authentication-key Premier_League \n",
+    "set protocols bgp group EBGP_TEST-TGW neighbor <remote-ip> bfd-liveness-detection minimum-interval 300 \n",
+    "set protocols bgp group EBGP_TEST-TGW neighbor <remote-ip>  bfd-liveness-detection multiplier 3 \n",
+]
+
+commit_command_list = [
+	"show | compare \n" ,
+]
+
+try:
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(hostname, port=22, username=username,
+                password=password,
+                look_for_keys=False, allow_agent=False)
+    remote_conn = ssh.invoke_shell()
+    output = remote_conn.recv(65535)
+    print output
+except Exception:
+    logging.info("Connection setup failure")
+    print "Please Check Hostname"
+    ssh.close()
+    exit()
+
+
+def junos_config(hostname):
+    try:
+        print "##################################################################"
+        print "##################################################################"
+        print "Current Configuration listed as below for vlan and local ip"
+        print "##################################################################"
+        print "##################################################################"
+        for cmd in init_command_list:
+            remote_conn.send(cmd)
+            print
+            time.sleep(1)
+            output = remote_conn.recv(65535)
+            print "##################################################################"
+            print "##################################################################"
+            print output
+    finally:
+        for cmd2 in commit_command_list:
+            remote_conn.send(cmd2)
+            print
+            time.sleep(1)
+            output2 = remote_conn.recv(65535)
+            print "##################################################################"
+            print "Please focus, below configuration change going to be apply"
+            print "##################################################################"
+            print output2
+            c = raw_input("would you like to proceed with new configuration y/n): ")
+            if c == 'y':
+                remote_conn.send("\n")
+                remote_conn.send("commit \n")
+                time.sleep(6)
+                output3 = remote_conn.recv(65535)
+                print "##################################################################"
+                print "Applying Changes"
+                print "##################################################################"
+                print output3
+                print "Changes Have Been Applied"
+                print "Logging off from Node.Thank you!"
+            elif c == "n":
+                print "Logging off from Node.Thank you!"
+                ssh.close()
+                exit()
+            print "##################################################################"
+            print "##################################################################"
+        ssh.close()
+
+
+junos_config(hostname)
